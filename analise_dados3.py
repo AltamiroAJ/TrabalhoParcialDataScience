@@ -3,6 +3,51 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import os
 import plotly.express as px
+from sklearn.preprocessing import LabelEncoder
+from unidecode import unidecode
+
+
+def generate_correlation_heatmap(dataset,subpasta):
+    # Copy the dataset to keep the original intact
+    encoded_data = dataset.copy()
+
+    # Remove specific columns
+    columns_to_remove = ['id', 'pesid', 'id_veiculo', 'ilesos',	'feridos_leves', 'feridos_graves', 'mortos', 'latitude', 'longitude', 'regional', 'delegacia', 'uop', 'naturalidade', 'nacionalidade']
+    encoded_data = encoded_data.drop(columns=columns_to_remove, errors='ignore')  # 'errors='ignore'' ensures the code doesn't break if the columns don't exist
+
+    # Initialize label encoder
+    labelencoder = LabelEncoder()
+
+    # Apply LabelEncoder to each column
+    for col in encoded_data.columns:
+        encoded_data[col] = labelencoder.fit_transform(encoded_data[col].astype(str))
+
+    # Compute the correlation matrix for all columns
+    correlation_matrix_encoded = encoded_data.corr()
+
+    # Generate a heatmap for all columns
+    plt.figure(figsize=(20, 20))  # You may want to adjust the figure size based on the number of columns
+    sns.heatmap(correlation_matrix_encoded, annot=True, fmt=".2f", cmap="coolwarm", square=True)
+    plt.title("Correlation Heatmap for All Columns (Encoded)")
+    plt.tight_layout()
+
+    # Save the heatmap
+    nome_arquivo_encoded = f"{subpasta}\Correlation_Heatmap_All_Encoded_Columns.png"
+    plt.savefig(nome_arquivo_encoded)
+    plt.close()
+
+def encode_qualitative_to_numeric(dataset, metricas_filtro):
+    encoded_dataset = dataset.astype(str).copy()  # Deep copy of the original dataset
+    le = LabelEncoder()  # Initialize label encoder
+    
+    for col in metricas_filtro:
+        # Ensure the column does not contain NaN values
+        if encoded_dataset[col].isna().any():
+            encoded_dataset[col].fillna("Unknown", inplace=True)  # Filling NaN values with "Unknown"
+        
+        encoded_dataset[col] = le.fit_transform(encoded_dataset[col])  # Encode qualitative column to numerical
+    
+    return encoded_dataset
 
 # Create directories if not exists
 subpastas = ["Completo", "Fatais", "Graves"]
@@ -14,17 +59,55 @@ sns.set_theme(style="whitegrid")
 palette = sns.color_palette("pastel")
 
 # Load dataset
-dados = pd.read_csv('data_estados2015.csv', delimiter=';', decimal=',', encoding='ISO-8859-1')
+#dados = pd.read_csv('acidentes2017.csv', delimiter=';', decimal=',', encoding='ISO-8859-1')
+filenames = [
+    'acidentes2007.csv',
+    'acidentes2008.csv',
+    'acidentes2009.csv',
+    'acidentes2010.csv',
+    'acidentes2011.csv',
+    'acidentes2012.csv',
+    'acidentes2013.csv',
+    'acidentes2014.csv',
+    'acidentes2015.csv',
+    'acidentes2016.csv',
+    'acidentes2017.csv',
+    'acidentes2018.csv',
+    'acidentes2019.csv',
+    'acidentes2020.csv',
+    'acidentes2021.csv',
+    'acidentes2022.csv'
+]
+
+dfs = [pd.read_csv(filename, delimiter=';', decimal=',', encoding='ISO-8859-1', low_memory=False) for filename in filenames]
+
+dados = pd.concat(dfs, ignore_index=True)
+def clean_text(val):
+    if isinstance(val, str):
+        val = val.lower()
+        val = unidecode(val)
+        val = val.strip()
+    return val
+
+dados = dados.applymap(clean_text)
+dados['dia_semana'] = dados['dia_semana'].replace('segunda-feira', 'segunda')
+dados['dia_semana'] = dados['dia_semana'].replace('terca-feira', 'terca')
+dados['dia_semana'] = dados['dia_semana'].replace('quarta-feira', 'quarta')
+dados['dia_semana'] = dados['dia_semana'].replace('quinta-feira', 'quinta')
+dados['dia_semana'] = dados['dia_semana'].replace('sexta-feira', 'sexta')
 
 # Filtering by State
 #dados_estados = dados[dados['uf'].isin(['SC', 'PR', 'RS'])].dropna().copy()
 #dados_estados.to_csv('data_estados.csv', index=False, sep=';', decimal=',', encoding='ISO-8859-1')  # Setting index=False prevents pandas from writing row numbers.
 # Filtering by state and fatal classification
-dados_gerais = dados[(dados['estado_fisico'] == 'Ignorado    ')].dropna().copy()
-dados_fatais = dados[(dados['estado_fisico'] == 'Morto       ')].dropna().copy()
+#dados_gerais = dados[dados['uf'].isin(['SC', 'PR', 'RS'])].copy()
+#dados_fatais = dados[dados['uf'].isin(['SC', 'PR', 'RS']) & dados['estado_fisico'].isin(['Morto       ', 'Óbito'])].copy()
+dados_gerais = dados[dados['uf'].isin(['sc', 'pr', 'rs'])].copy()
+dados_fatais = dados[dados['uf'].isin(['sc', 'pr', 'rs']) & dados['estado_fisico'].isin(['morto', 'obito'])].copy()
+dados_graves = dados[dados['uf'].isin(['sc', 'pr', 'rs']) & dados['estado_fisico'].isin(['ferido grave','lesoes graves'])].copy()
 
 # Filtering by state and serious injuries
-dados_graves = dados[(dados['estado_fisico'] == 'Ferido Grave')].dropna().copy()
+#dados_graves = dados[dados['uf'].isin(['SC', 'PR', 'RS']) & dados['estado_fisico'].isin(['Ferido Grave','Lesões Graves'])].copy()
 
 def criar_grafico(data, coluna, titulo, subpasta):
     plt.figure(figsize=(12, (10 if coluna == 'ano_fabricacao_veiculo' else 6)))
@@ -54,7 +137,7 @@ def criar_grafico(data, coluna, titulo, subpasta):
         # Add the combined values to the list of sizes and labels
         if others > 0:
             sizes.append(others)
-            labels.append('Demais')
+            labels.append('demais')
         
         # Create a list of colors based on labels using color_map.
         colors = [color_map.get(str(label), 'grey') for label in labels]
@@ -100,49 +183,66 @@ def criar_grafico(data, coluna, titulo, subpasta):
     plt.savefig(nome_arquivo)
     plt.close()
 
+    # Encode the dataset
+    encoded_dataset = encode_qualitative_to_numeric(data, metricas_filtro)
+
+    # Calculate the correlation matrix
+    correlation_matrix = encoded_dataset[metricas_filtro].corr()
+
+    # Generate a heatmap
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(correlation_matrix, annot=True, fmt=".2f", cmap="coolwarm")
+    plt.title(f"Correlation Heatmap ({titulo})")
+    plt.tight_layout()
+
+    # Save the heatmap
+    nome_arquivo = f"{subpasta}/Correlation_Heatmap_{subpasta}.png"
+    plt.savefig(nome_arquivo)
+    plt.close()
+
 # Custom color map
 color_map = {
-    'Ceu Claro': 'lightskyblue',
-    'Nublado': 'darkgrey',
-    'Chuva': 'navy',
-    'Sol': 'yellow',
-    'Nevoeiro/neblina': 'gainsboro',
-    'Ignorada': 'tomato',
-    'Vento': 'violet',
-    'Granizo': 'orange',
-    'Neve': 'khaki',
+    'ceu claro': 'lightskyblue',
+    'nublado': 'darkgrey',
+    'chuva': 'navy',
+    'sol': 'yellow',
+    'nevoeiro/neblina': 'gainsboro',
+    'ignorada': 'tomato',
+    'vento': 'violet',
+    'granizo': 'orange',
+    'neve': 'khaki',
 
-    'Falta de atenção': 'yellow',
-    'Outras': 'peru',
-    'Não guardar distância de segurança': 'red',
-    'Velocidade incompatível': 'grey',
-    'Desobediência à sinalização': 'cyan',
-    'Ingestão de álcool': 'lime',
-    'Defeito mecânico em veículo' : 'indigo',
-    'Ultrapassagem indevida': 'skyblue',
-    'Dormindo': 'black',
-    'Demais': 'gold',
+    'falta de atencao': 'yellow',
+    'outras': 'peru',
+    'nao guardar distancia de segurança': 'red',
+    'velocidade incompativel': 'grey',
+    'desobediencia a sinalizacao': 'cyan',
+    'ingestao de alcool': 'lime',
+    'defeito mecanico em veiculo' : 'indigo',
+    'ultrapassagem indevida': 'skyblue',
+    'dormindo': 'black',
+    'demais': 'gold',
 
-    'Segunda': 'red',
-    'Terça  ': 'orange',
-    'Quarta ': 'yellow',
-    'Quinta ': 'green',
-    'Sexta  ': 'blue',
-    'Sábado ': 'indigo',
-    'Domingo': 'violet',
+    'segunda': 'red',
+    'terca': 'orange',
+    'quarta': 'yellow',
+    'quinta': 'green',
+    'sexta': 'blue',
+    'sabado': 'indigo',
+    'domingo': 'violet',
 
-    'Pleno dia': 'yellow',
-    'Plena noite': 'black',
-    'Anoitecer': 'navy',
-    'Amanhecer': 'orange',
+    'pleno dia': 'yellow',
+    'plena noite': 'black',
+    'anoitecer': 'navy',
+    'amanhecer': 'orange',
 
-    'Simples ': 'red',
-    'Dupla   ': 'blue',
-    'Múltipla': 'green',
+    'simples': 'red',
+    'dupla': 'blue',
+    'múltipla': 'green',
 
-    'Reta      ': 'red',
-    'Curva     ': 'blue',
-    'Cruzamento': 'green'
+    'reta': 'tomato',
+    'curva': 'cyan',
+    'cruzamento': 'lime'
 }
 
 metricas = [
@@ -203,19 +303,28 @@ def generate_circle_packing_plot(dataset, label, salvapasta):
     fig.show()
 
 
-dados_graves_semnull = dados_graves[dados_graves['ano_fabricacao_veiculo']!='(null)']
-dados_graves_semvazio = dados_graves_semnull.fillna('vazia', inplace=True)
+dados_graves_semnull = dados_graves[dados_graves['ano_fabricacao_veiculo']!='(null)'].astype(str).copy()
+dados_graves_semvazio = dados_graves_semnull.fillna('Vazia', inplace=True)
 dados_graves_semvazio2 = dados_graves_semnull[dados_graves_semnull['ano_fabricacao_veiculo']!='    ']
 
 
-dados_fatais_semnull = dados_fatais[dados_fatais['ano_fabricacao_veiculo']!='(null)']
+dados_fatais_semnull = dados_fatais[dados_fatais['ano_fabricacao_veiculo']!='(null)'].astype(str).copy()
 dados_fatais_semvazio = dados_fatais_semnull.fillna('vazia', inplace=True)
 dados_fatais_semvazio2 = dados_fatais_semnull[dados_fatais_semnull['ano_fabricacao_veiculo']!='    ']
 
-dados_semnull = dados[dados['ano_fabricacao_veiculo']!='(null)']
+dados_semnull = dados_gerais[dados['ano_fabricacao_veiculo']!='(null)'].astype(str).copy()
 dados_semvazio = dados_semnull.fillna('vazia', inplace=True)
 dados_semvazio2 = dados_semnull[dados_semnull['ano_fabricacao_veiculo']!='    ']
 
+
+# # This could be added just before calling `analisar_dataset` for "Acidentes Fatais"
+# dados_fatais_encoded = encode_qualitative_to_numeric(dados_fatais_semvazio2, metricas_filtro)
+
+
 analisar_dataset(dados_semvazio2, "Todos os Acidentes")
-analisar_dataset(dados_fatais_semvazio2, "Acidentes Fatais")
 analisar_dataset(dados_graves_semvazio2, "Acidentes com Feridos Graves")
+analisar_dataset(dados_fatais_semvazio2, "Acidentes Fatais")
+
+generate_correlation_heatmap(dados_semvazio2, "Completo")
+generate_correlation_heatmap(dados_graves_semvazio2, "Graves")
+generate_correlation_heatmap(dados_fatais_semvazio2, "Fatais")
